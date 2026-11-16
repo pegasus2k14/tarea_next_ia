@@ -19,8 +19,8 @@ esperado de la API REST.
 MediGest es el frontend base de un sistema sencillo de gestión de medicamentos.
 Incluye dos vistas:
 
-- **Paciente:** resumen, catálogo de medicamentos, verificación de stock e
-  historial de recetas.
+- **Paciente:** resumen, recetas activas con dosis y frecuencia, catálogo de
+  medicamentos, verificación de stock e historial de recetas.
 - **Farmacéutico/Administrador:** panel de inventario, reabastecimiento y
   creación/seguimiento de recetas.
 
@@ -69,6 +69,7 @@ Antes de entregar cambios, los tres últimos comandos deben pasar sin errores.
 │   ├── icon.svg                    # Favicon
 │   ├── not-found.tsx
 │   ├── paciente/
+│   │   ├── layout.tsx              # Guard de rol simulado (paciente)
 │   │   ├── page.tsx                # Resumen del paciente
 │   │   ├── medicamentos/page.tsx   # Catálogo + verificación de stock
 │   │   └── recetas/page.tsx        # Recetas del usuario actual
@@ -80,9 +81,9 @@ Antes de entregar cambios, los tres últimos comandos deben pasar sin errores.
 ├── components/
 │   ├── layout/                     # Navbar y footer
 │   ├── providers/                  # RoleProvider (sesión simulada)
-│   ├── ui/                         # Primitivas: Button, Card, Badge, Input…
-│   ├── medicamentos/               # StockBadge, tabla, verificador de stock
-│   └── recetas/                    # Tarjeta, badge y formulario de receta
+│   ├── ui/                         # Primitivas: Button, Card, Badge, Modal, Input…
+│   ├── medicamentos/               # Tabla, badges, alta y verificador de stock
+│   └── recetas/                    # Tarjeta de paciente, badges y formulario
 ├── services/
 │   ├── api.ts                      # Cliente HTTP real + contrato ApiClient
 │   ├── mock-client.ts              # Implementación local del contrato
@@ -178,6 +179,9 @@ components/*  →  types/*, lib/*        (nunca importan services/api.ts directo
 - La navbar permite alternar vistas y navega a `/paciente` o `/admin`.
 - `app/admin/layout.tsx` muestra una pantalla de acceso restringido si el rol
   activo no es `farmaceutico`.
+- `app/paciente/layout.tsx` hace lo mismo para la vista de paciente: si el rol
+  activo no es `paciente`, ofrece activar esa vista. Ambos guards son
+  simulaciones de UI.
 - Usuarios demo en `lib/constants.ts` (`USUARIO_ACTUAL`).
 - Al integrar autenticación real:
   1. Reemplazar `RoleProvider` por la sesión del backend.
@@ -224,6 +228,7 @@ api.auth.logout()                          // POST /auth/logout
 
 api.medicamentos.listar(query)             // GET  /medicamentos
 api.medicamentos.obtener(id)               // GET  /medicamentos/:id
+api.medicamentos.crear(payload)            // POST /medicamentos
 api.medicamentos.verificarStock(id, cant.) // GET  /medicamentos/:id/stock
 api.medicamentos.actualizarStock(id, stock)// PATCH /medicamentos/:id/stock
 
@@ -231,6 +236,7 @@ api.recetas.crear(payload)                 // POST /recetas
 api.recetas.listarPorUsuario(userId, q)    // GET  /recetas?usuarioId=...
 api.recetas.listar(query)                  // GET  /recetas
 api.recetas.obtener(id)                    // GET  /recetas/:id
+api.recetas.actualizarEstado(id, estado)   // PATCH /recetas/:id/dispensar | /estado
 
 api.pacientes.listar(query)                // GET  /pacientes
 ```
@@ -404,6 +410,31 @@ Body: `{ "stock": 28 }` — **valor absoluto** resultante, no incremento.
 Respuesta `200` con `data: Medicamento` actualizado. Solo rol `farmaceutico`.
 La UI de inventario suma 20 unidades y envía el total.
 
+#### `POST /medicamentos`
+
+Alta de un medicamento o de un lote nuevo. Solo rol `farmaceutico`.
+
+```json
+{
+  "nombre": "Amoxicilina",
+  "principioActivo": "Amoxicilina trihidratada",
+  "presentacion": "Cápsula 500 mg",
+  "laboratorio": "Senosiain",
+  "categoria": "antibiotico",
+  "precio": 120,
+  "stock": 40,
+  "stockMinimo": 25,
+  "requiereReceta": true,
+  "lote": "AMX-26A01",
+  "fechaVencimiento": "2027-06-30"
+}
+```
+
+Respuesta `201` con `data: Medicamento`. El backend genera `id`, `estado`
+(calculado con `stock` y `stockMinimo`) y `actualizadoEn`. La UI envía el
+formulario del modal de inventario; rechaza fechas de caducidad pasadas antes
+de la petición.
+
 ### 9.7 Recetas
 
 #### `POST /recetas`
@@ -416,6 +447,8 @@ La UI de inventario suma 20 unidades y envía el total.
     {
       "medicamentoId": "med_amoxicilina",
       "cantidad": 1,
+      "dosis": "1 cápsula",
+      "frecuencia": "Cada 8 horas",
       "indicaciones": "1 cápsula cada 8 horas durante 7 días."
     }
   ],
@@ -443,6 +476,8 @@ Respuesta `201`:
         "presentacion": "Cápsula 500 mg",
         "cantidad": 1,
         "precioUnitario": 120,
+        "dosis": "1 cápsula",
+        "frecuencia": "Cada 8 horas",
         "indicaciones": "1 cápsula cada 8 horas durante 7 días.",
         "dispensada": false
       }
@@ -459,7 +494,18 @@ Reglas:
 - `estado` inicial: `pendiente`.
 - Validar stock por ítem; si falta, responder `409 STOCK_INSUFICIENTE`.
 - No descontar stock al crear la receta: el descuento ocurre al dispensar
-  (flujo aún no implementado). Documentar si el backend decide reservar.
+  (`PATCH /recetas/{id}/dispensar`). Si el backend decide reservar stock al
+  crear, documentarlo y ajustar el cliente.
+- La UI compone `indicaciones` con dosis, frecuencia e indicaciones
+  adicionales; el cliente bloquea el envío si el medicamento elegido no tiene
+  existencias o si la cantidad supera el stock.
+- `dosis` y `frecuencia` son campos opcionales que la UI envía junto con
+  `indicaciones` para mostrar la receta con claridad al paciente. Si el backend
+  no los devuelve, la vista de paciente los deduce de `indicaciones` y usa
+  "Según indicación" como último respaldo.
+- La vista de paciente simplifica `estado`: `pendiente` y `parcial` se muestran
+  como **Activo**; `dispensada` como **Completado**; `cancelada` como
+  **Cancelado**.
 
 #### `GET /recetas`
 
@@ -475,11 +521,28 @@ Respuesta: `Paginated<Receta>`.
 
 `data: Receta` o `404 RECETA_NOT_FOUND`.
 
+#### `PATCH /recetas/{id}/dispensar`
+
+Solo rol `farmaceutico`. Marca la receta como `dispensada`, marca sus ítems
+como `dispensada: true` y descuenta del inventario la cantidad pendiente de
+cada medicamento. Si algún ítem no tiene stock suficiente, responder
+`409 STOCK_INSUFICIENTE` sin descontar nada. Respuesta `200` con
+`data: Receta` actualizada.
+
+#### `PATCH /recetas/{id}/estado`
+
+Solo rol `farmaceutico`. Body:
+`{ "estado": "pendiente" | "parcial" | "cancelada" }`. Cambia el estado sin
+tocar el stock. Respuesta `200` con `data: Receta`.
+
+El cliente expone una sola función, `api.recetas.actualizarEstado(id, estado)`:
+si `estado` es `dispensada` llama a `/dispensar`; en cualquier otro caso usa
+`/estado`. La vista `/admin/recetas` muestra un selector de estado por tarjeta
+y refresca la lista después del cambio.
+
 #### Endpoints pendientes (no usados por la UI actual)
 
-- `PATCH /recetas/{id}/dispensar` → descuenta stock y cambia estado.
-- `PATCH /recetas/{id}/estado` → cancelar/parcial.
-- `POST /medicamentos` / `PATCH /medicamentos/{id}` → alta/edición de catálogo.
+- `PATCH /medicamentos/{id}` → edición de catálogo.
 - `POST /auth/refresh` → renovación de token.
 
 ### 9.8 Pacientes (soporte para crear recetas)
@@ -561,7 +624,7 @@ type EstadoReceta = "pendiente" | "dispensada" | "parcial" | "cancelada";
 ## 13. Próximos pasos sugeridos
 
 - Autenticación real (login, refresh, cookies `httpOnly`, guard de rutas).
-- Detalle de receta y flujo de dispensado con descuento de stock.
+- Detalle de receta e historial de cambios de estado.
 - CRUD completo de medicamentos y alertas de caducidad.
 - Persistencia de filtros/paginación en la URL (`searchParams`).
 - Tests unitarios de servicios y E2E del flujo de recetas.

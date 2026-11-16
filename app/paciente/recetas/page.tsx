@@ -2,21 +2,34 @@
 
 import { useState } from "react";
 import { useRole } from "@/components/providers/role-provider";
-import { RecetaCard } from "@/components/recetas/receta-card";
+import { RecetaPacienteCard } from "@/components/recetas/receta-paciente-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { IconClipboard } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAsync } from "@/hooks/use-async";
-import { ESTADO_RECETA_LABEL, ESTADOS_RECETA } from "@/lib/constants";
+import { ESTADO_RECETA_PACIENTE_LABEL } from "@/lib/constants";
+import { estadoRecetaPaciente, type EstadoRecetaPaciente } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { api } from "@/services";
-import type { EstadoReceta } from "@/types";
 
-type Filtro = "todas" | EstadoReceta;
+type Filtro = "todas" | EstadoRecetaPaciente;
 
-const FILTROS: Filtro[] = ["todas", ...ESTADOS_RECETA];
+const FILTROS: Filtro[] = ["todas", "activo", "completado", "cancelado"];
+
+const FILTRO_LABEL: Record<Filtro, string> = {
+  todas: "Todas",
+  activo: "Activas",
+  completado: "Completadas",
+  cancelado: "Canceladas",
+};
+
+const PESO_ESTADO: Record<EstadoRecetaPaciente, number> = {
+  activo: 0,
+  completado: 1,
+  cancelado: 2,
+};
 
 export default function MisRecetasPage() {
   const { usuario } = useRole();
@@ -26,17 +39,60 @@ export default function MisRecetasPage() {
   );
   const [filtro, setFiltro] = useState<Filtro>("todas");
 
-  const recetas = recetasQ.data?.items ?? [];
+  const recetas = [...(recetasQ.data?.items ?? [])].sort((a, b) => {
+    const estadoA = estadoRecetaPaciente(a.estado);
+    const estadoB = estadoRecetaPaciente(b.estado);
+    if (PESO_ESTADO[estadoA] !== PESO_ESTADO[estadoB]) {
+      return PESO_ESTADO[estadoA] - PESO_ESTADO[estadoB];
+    }
+    return b.fechaEmision.localeCompare(a.fechaEmision);
+  });
+
+  const activas = recetas.filter(
+    (receta) => estadoRecetaPaciente(receta.estado) === "activo",
+  ).length;
+
   const filtradas =
     filtro === "todas"
       ? recetas
-      : recetas.filter((receta) => receta.estado === filtro);
+      : recetas.filter(
+          (receta) => estadoRecetaPaciente(receta.estado) === filtro,
+        );
 
-  function contar(estado: Filtro): number {
-    return estado === "todas"
+  function contar(opcion: Filtro): number {
+    return opcion === "todas"
       ? recetas.length
-      : recetas.filter((receta) => receta.estado === estado).length;
+      : recetas.filter(
+          (receta) => estadoRecetaPaciente(receta.estado) === opcion,
+        ).length;
   }
+
+  const resumenActivas =
+    activas === 1 ? "1 receta activa" : `${activas} recetas activas`;
+
+  const vacio =
+    recetas.length === 0
+      ? {
+          title: "Aún no tienes recetas",
+          description:
+            "Cuando tu médico registre una prescripción, podrás consultarla aquí con su dosis y frecuencia.",
+        }
+      : filtro === "activo"
+        ? {
+            title: "No tienes recetas activas",
+            description:
+              "Tu tratamiento está al día. Aquí aparecerán las nuevas prescripciones que emita tu médico.",
+          }
+        : filtro === "completado"
+          ? {
+              title: "Aún no hay recetas completadas",
+              description:
+                "Cuando surtas una receta en la farmacia, se moverá a tu historial de completadas.",
+            }
+          : {
+              title: "No hay recetas en este estado",
+              description: "Cambia el filtro para revisar otras recetas.",
+            };
 
   return (
     <div className="space-y-6">
@@ -45,15 +101,17 @@ export default function MisRecetasPage() {
         description={
           recetasQ.loading
             ? "Consultando tu historial de recetas…"
-            : `${recetas.length} recetas registradas en tu expediente.`
+            : `Tienes ${resumenActivas} de ${recetas.length} en tu expediente.`
         }
       />
 
-      <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-card">
+      <div
+        className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-card"
+        role="group"
+        aria-label="Filtrar recetas por estado"
+      >
         {FILTROS.map((opcion) => {
           const activo = filtro === opcion;
-          const label =
-            opcion === "todas" ? "Todas" : ESTADO_RECETA_LABEL[opcion];
           return (
             <button
               key={opcion}
@@ -67,7 +125,7 @@ export default function MisRecetasPage() {
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-800",
               )}
             >
-              {label}
+              {FILTRO_LABEL[opcion]}
               <span
                 className={cn(
                   "rounded-full px-1.5 text-[10px] tabular-nums",
@@ -94,24 +152,24 @@ export default function MisRecetasPage() {
       ) : filtradas.length === 0 ? (
         <EmptyState
           icon={<IconClipboard className="h-5 w-5" />}
-          title={
-            recetas.length === 0
-              ? "Aún no tienes recetas"
-              : "No hay recetas con este estado"
-          }
-          description={
-            recetas.length === 0
-              ? "Cuando tu médico registre una prescripción, podrás consultarla aquí."
-              : "Cambia el filtro para revisar otras recetas de tu historial."
-          }
+          title={vacio.title}
+          description={vacio.description}
         />
       ) : (
         <div className="grid items-start gap-4 md:grid-cols-2">
           {filtradas.map((receta) => (
-            <RecetaCard key={receta.id} receta={receta} />
+            <RecetaPacienteCard key={receta.id} receta={receta} />
           ))}
         </div>
       )}
+
+      {!recetasQ.loading && !recetasQ.error && filtradas.length > 0 ? (
+        <p className="text-center text-xs text-slate-400">
+          {ESTADO_RECETA_PACIENTE_LABEL.activo}: receta pendiente de surtir o
+          surtida parcialmente. {ESTADO_RECETA_PACIENTE_LABEL.completado}:
+          receta ya surtida en la farmacia.
+        </p>
+      ) : null}
     </div>
   );
 }

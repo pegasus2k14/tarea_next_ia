@@ -9,13 +9,16 @@ El proyecto está listo para consumir una API REST externa, pero incluye un
 ## Demo
 
 - **Vista paciente:** `/paciente`
-  - Resumen y recetas activas.
+  - Resumen y recetas activas con dosis y frecuencia.
   - Catálogo con búsqueda y verificación de stock.
-  - Historial de recetas por estado.
+  - Historial de recetas con estados Activo / Completado.
 - **Vista farmacéutico:** `/admin`
   - Panel con indicadores de inventario y recetas.
-  - Inventario con reposición rápida (+20 unidades).
-  - Alta de receta y seguimiento de todas las recetas.
+  - Inventario con tabla de lotes, alertas de stock/caducidad, reposición rápida
+    (+20 unidades) y alta de medicamentos en modal.
+  - Emisión de receta con dosis, frecuencia y validación de existencias.
+  - Cambio de estado de recetas (pendiente, parcial, dispensada, cancelada);
+    al dispensar se descuenta el stock pendiente.
 
 La barra superior permite alternar entre ambas vistas (rol simulado). El rol se
 guarda en `localStorage` (`medigest.rol`).
@@ -77,12 +80,26 @@ const medicamentos = await api.medicamentos.listar({
 });
 
 const stock = await api.medicamentos.verificarStock("med_amoxicilina", 2);
+const alta = await api.medicamentos.crear({
+  nombre: "Naproxeno",
+  principioActivo: "Naproxeno sódico",
+  presentacion: "Tableta 250 mg",
+  laboratorio: "Pisa",
+  categoria: "analgesico",
+  precio: 78.5,
+  stock: 45,
+  stockMinimo: 15,
+  requiereReceta: false,
+  lote: "NAP-26B02",
+  fechaVencimiento: "2027-08-31",
+});
 const recetas = await api.recetas.listarPorUsuario("usr_pac_001");
 const nueva = await api.recetas.crear({
   usuarioId: "usr_pac_001",
   medicoNombre: "Dra. Elena Ríos",
   items: [{ medicamentoId: "med_amoxicilina", cantidad: 1 }],
 });
+const dispensada = await api.recetas.actualizarEstado(nueva.id, "dispensada");
 ```
 
 El contrato completo (endpoints, envelopes, errores, enums y reglas de stock)

@@ -3,13 +3,17 @@ import { Card } from "@/components/ui/card";
 import { IconCalendar, IconClipboard, IconStethoscope } from "@/components/ui/icons";
 import { formatearFecha, formatearMoneda } from "@/lib/format";
 import type { Receta } from "@/types";
+import type { ReactNode } from "react";
 
 export function RecetaCard({
   receta,
   variant = "default",
+  acciones,
 }: {
   receta: Receta;
   variant?: "default" | "compact";
+  /** Controles adicionales, por ejemplo el cambio de estado del farmacéutico. */
+  acciones?: ReactNode;
 }) {
   const compacta = variant === "compact";
 
@@ -77,6 +81,10 @@ export function RecetaCard({
           {formatearMoneda(receta.total)}
         </span>
       </div>
+
+      {acciones ? (
+        <div className="mt-3.5 border-t border-slate-100 pt-3.5">{acciones}</div>
+      ) : null}
     </Card>
   );
 }

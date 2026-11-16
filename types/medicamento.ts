@@ -32,6 +32,22 @@ export interface Medicamento {
   actualizadoEn?: string;
 }
 
+/** Datos para registrar un medicamento o un nuevo lote en el catálogo. */
+export interface CrearMedicamentoRequest {
+  nombre: string;
+  principioActivo: string;
+  presentacion: string;
+  laboratorio: string;
+  categoria: CategoriaMedicamento;
+  precio: number;
+  stock: number;
+  stockMinimo: number;
+  requiereReceta: boolean;
+  lote?: string;
+  /** Fecha ISO (YYYY-MM-DD). */
+  fechaVencimiento?: string;
+}
+
 export interface MedicamentoQuery extends PaginationParams {
   search?: string;
   categoria?: CategoriaMedicamento;

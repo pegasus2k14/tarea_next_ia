@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { StockChecker } from "@/components/medicamentos/stock-checker";
-import { RecetaCard } from "@/components/recetas/receta-card";
+import { RecetaPacienteCard } from "@/components/recetas/receta-paciente-card";
 import {
   IconAlert,
   IconArrowRight,
@@ -91,7 +91,7 @@ export default function PacientePage() {
         <StatCard
           label="Recetas activas"
           value={recetasQ.loading ? "—" : recetasActivas.length}
-          hint="Pendientes o parcialmente surtidas"
+          hint="En tratamiento ahora"
           icon={<IconClipboard className="h-5 w-5" />}
           tone="brand"
         />
@@ -119,7 +119,7 @@ export default function PacientePage() {
                 Recetas activas
               </h2>
               <p className="text-xs text-slate-500">
-                Tratamientos que aún requieren surtido.
+                Dosis y frecuencia de tus tratamientos en curso.
               </p>
             </div>
             <Link
@@ -144,7 +144,11 @@ export default function PacientePage() {
           ) : recetasActivas.length > 0 ? (
             <div className="space-y-3">
               {recetasActivas.slice(0, 2).map((receta) => (
-                <RecetaCard key={receta.id} receta={receta} variant="compact" />
+                <RecetaPacienteCard
+                  key={receta.id}
+                  receta={receta}
+                  variant="compact"
+                />
               ))}
             </div>
           ) : (

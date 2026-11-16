@@ -18,7 +18,28 @@ interface ItemDraft {
   key: string;
   medicamentoId: string;
   cantidad: number;
+  dosis: string;
+  frecuencia: string;
   indicaciones: string;
+}
+
+const FRECUENCIAS = [
+  "Cada 4 horas",
+  "Cada 6 horas",
+  "Cada 8 horas",
+  "Cada 12 horas",
+  "Cada 24 horas",
+  "Una vez al día",
+  "Según necesidad",
+];
+
+function componerIndicaciones(item: ItemDraft): string | undefined {
+  const partes = [item.dosis.trim(), item.frecuencia, item.indicaciones.trim()]
+    .map((parte) => parte.replace(/[.\s]+$/, ""))
+    .filter(Boolean);
+
+  if (partes.length === 0) return undefined;
+  return `${partes.join(". ")}.`;
 }
 
 export function RecetaForm({
@@ -38,7 +59,14 @@ export function RecetaForm({
   const [medicoNombre, setMedicoNombre] = useState("");
   const [notas, setNotas] = useState("");
   const [items, setItems] = useState<ItemDraft[]>([
-    { key: "item-1", medicamentoId: "", cantidad: 1, indicaciones: "" },
+    {
+      key: "item-1",
+      medicamentoId: "",
+      cantidad: 1,
+      dosis: "",
+      frecuencia: "",
+      indicaciones: "",
+    },
   ]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +87,8 @@ export function RecetaForm({
         key: `item-${siguienteItem.current++}`,
         medicamentoId: "",
         cantidad: 1,
+        dosis: "",
+        frecuencia: "",
         indicaciones: "",
       },
     ]);
@@ -94,13 +124,45 @@ export function RecetaForm({
       return;
     }
 
+    for (const item of itemsValidos) {
+      const medicamento = medicamentos.find(
+        (candidato) => candidato.id === item.medicamentoId,
+      );
+      if (!medicamento) {
+        setError("El medicamento seleccionado ya no está disponible.");
+        return;
+      }
+      if (medicamento.stock === 0) {
+        setError(
+          `No hay existencias de ${medicamento.nombre}. Repón el inventario antes de emitir la receta.`,
+        );
+        return;
+      }
+      if (item.cantidad > medicamento.stock) {
+        setError(
+          `Solo hay ${medicamento.stock} unidades de ${medicamento.nombre} y solicitaste ${item.cantidad}.`,
+        );
+        return;
+      }
+      if (!item.dosis.trim()) {
+        setError(`Indica la dosis de ${medicamento.nombre}.`);
+        return;
+      }
+      if (!item.frecuencia) {
+        setError(`Selecciona la frecuencia de ${medicamento.nombre}.`);
+        return;
+      }
+    }
+
     const payload: CrearRecetaRequest = {
       usuarioId: pacienteId,
       medicoNombre: medicoNombre.trim(),
       items: itemsValidos.map((item) => ({
         medicamentoId: item.medicamentoId,
         cantidad: item.cantidad,
-        indicaciones: item.indicaciones.trim() || undefined,
+        dosis: item.dosis.trim() || undefined,
+        frecuencia: item.frecuencia || undefined,
+        indicaciones: componerIndicaciones(item),
       })),
       notas: notas.trim() || undefined,
     };
@@ -179,94 +241,175 @@ export function RecetaForm({
           </div>
 
           <div className="space-y-3">
-            {items.map((item, index) => (
-              <div
-                key={item.key}
-                className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 sm:grid-cols-[1fr_90px_auto]"
-              >
-                <div>
-                  <Label
-                    htmlFor={`receta-med-${item.key}`}
-                    className="text-xs text-slate-500"
-                  >
-                    Medicamento {index + 1}
-                  </Label>
-                  <Select
-                    id={`receta-med-${item.key}`}
-                    value={item.medicamentoId}
-                    onChange={(event) =>
-                      actualizarItem(item.key, {
-                        medicamentoId: event.target.value,
-                      })
-                    }
-                  >
-                    <option value="">Selecciona un medicamento</option>
-                    {medicamentos.map((medicamento) => (
-                      <option
-                        key={medicamento.id}
-                        value={medicamento.id}
-                        disabled={medicamento.estado === "agotado"}
+            {items.map((item, index) => {
+              const medicamento = medicamentos.find(
+                (candidato) => candidato.id === item.medicamentoId,
+              );
+              const sinStock = medicamento?.stock === 0;
+              const excedeStock = Boolean(
+                medicamento &&
+                  medicamento.stock > 0 &&
+                  item.cantidad > medicamento.stock,
+              );
+
+              return (
+                <div
+                  key={item.key}
+                  className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3"
+                >
+                  <div className="grid gap-3 sm:grid-cols-[1fr_100px_auto]">
+                    <div>
+                      <Label
+                        htmlFor={`receta-med-${item.key}`}
+                        className="text-xs text-slate-500"
                       >
-                        {medicamento.nombre} · {medicamento.presentacion}
-                        {medicamento.estado === "agotado"
-                          ? " (agotado)"
-                          : ` (${medicamento.stock} u.)`}
-                      </option>
-                    ))}
-                  </Select>
+                        Medicamento {index + 1}
+                      </Label>
+                      <Select
+                        id={`receta-med-${item.key}`}
+                        value={item.medicamentoId}
+                        onChange={(event) =>
+                          actualizarItem(item.key, {
+                            medicamentoId: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Selecciona un medicamento</option>
+                        {medicamentos.map((opcion) => (
+                          <option key={opcion.id} value={opcion.id}>
+                            {opcion.nombre} · {opcion.presentacion}
+                            {opcion.stock === 0
+                              ? " (sin existencias)"
+                              : ` (${opcion.stock} u.)`}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <Label
+                        htmlFor={`receta-cant-${item.key}`}
+                        className="text-xs text-slate-500"
+                      >
+                        Cantidad
+                      </Label>
+                      <Input
+                        id={`receta-cant-${item.key}`}
+                        type="number"
+                        min={1}
+                        max={999}
+                        value={item.cantidad}
+                        onChange={(event) =>
+                          actualizarItem(item.key, {
+                            cantidad: Math.max(
+                              0,
+                              Number(event.target.value) || 0,
+                            ),
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => quitarItem(item.key)}
+                        disabled={items.length === 1}
+                        aria-label={`Quitar medicamento ${index + 1}`}
+                        className="mb-0.5"
+                      >
+                        <IconX className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label
+                        htmlFor={`receta-dosis-${item.key}`}
+                        className="text-xs text-slate-500"
+                      >
+                        Dosis
+                      </Label>
+                      <Input
+                        id={`receta-dosis-${item.key}`}
+                        placeholder="Ej. 1 cápsula"
+                        value={item.dosis}
+                        onChange={(event) =>
+                          actualizarItem(item.key, {
+                            dosis: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label
+                        htmlFor={`receta-frec-${item.key}`}
+                        className="text-xs text-slate-500"
+                      >
+                        Frecuencia
+                      </Label>
+                      <Select
+                        id={`receta-frec-${item.key}`}
+                        value={item.frecuencia}
+                        onChange={(event) =>
+                          actualizarItem(item.key, {
+                            frecuencia: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Selecciona la frecuencia</option>
+                        {FRECUENCIAS.map((frecuencia) => (
+                          <option key={frecuencia} value={frecuencia}>
+                            {frecuencia}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label
+                      htmlFor={`receta-ind-${item.key}`}
+                      className="text-xs text-slate-500"
+                    >
+                      Indicaciones adicionales (opcional)
+                    </Label>
+                    <Input
+                      id={`receta-ind-${item.key}`}
+                      placeholder="Ej. Tomar con alimentos durante 7 días"
+                      value={item.indicaciones}
+                      onChange={(event) =>
+                        actualizarItem(item.key, {
+                          indicaciones: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  {sinStock ? (
+                    <p
+                      role="alert"
+                      className="flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-700"
+                    >
+                      <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {medicamento?.nombre} no tiene existencias. Repón el
+                      inventario antes de emitir la receta.
+                    </p>
+                  ) : null}
+
+                  {excedeStock ? (
+                    <p
+                      role="alert"
+                      className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800"
+                    >
+                      <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      Solo quedan {medicamento?.stock} unidades de{" "}
+                      {medicamento?.nombre}.
+                    </p>
+                  ) : null}
                 </div>
-                <div>
-                  <Label
-                    htmlFor={`receta-cant-${item.key}`}
-                    className="text-xs text-slate-500"
-                  >
-                    Cantidad
-                  </Label>
-                  <Input
-                    id={`receta-cant-${item.key}`}
-                    type="number"
-                    min={1}
-                    max={999}
-                    value={item.cantidad}
-                    onChange={(event) =>
-                      actualizarItem(item.key, {
-                        cantidad: Math.max(0, Number(event.target.value) || 0),
-                      })
-                    }
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => quitarItem(item.key)}
-                    disabled={items.length === 1}
-                    aria-label={`Quitar medicamento ${index + 1}`}
-                    className="mb-0.5"
-                  >
-                    <IconX className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="sm:col-span-3">
-                  <Label
-                    htmlFor={`receta-ind-${item.key}`}
-                    className="text-xs text-slate-500"
-                  >
-                    Indicaciones (opcional)
-                  </Label>
-                  <Input
-                    id={`receta-ind-${item.key}`}
-                    placeholder="Ej. 1 cápsula cada 8 horas por 7 días"
-                    value={item.indicaciones}
-                    onChange={(event) =>
-                      actualizarItem(item.key, {
-                        indicaciones: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MedicamentoFormModal } from "@/components/medicamentos/medicamento-form";
 import { MedicamentoTable } from "@/components/medicamentos/medicamento-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
   IconAlert,
   IconBoxes,
   IconCheck,
+  IconPlus,
   IconSearch,
 } from "@/components/ui/icons";
 import { Input, Select } from "@/components/ui/input";
@@ -21,6 +23,7 @@ import {
   CATEGORIA_LABEL,
   ESTADO_STOCK_LABEL,
 } from "@/lib/constants";
+import { estadoCaducidad } from "@/lib/format";
 import { normalizarTexto } from "@/lib/utils";
 import { api } from "@/services";
 import type {
@@ -41,12 +44,16 @@ export default function InventarioPage() {
   const [estado, setEstado] = useState<EstadoStock | "">("");
   const [reponiendoId, setReponiendoId] = useState<string | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
 
   const medicamentos = medicamentosQ.data?.items ?? [];
   const termino = normalizarTexto(busqueda);
   const bajo = medicamentos.filter((item) => item.estado === "bajo").length;
   const agotados = medicamentos.filter(
     (item) => item.estado === "agotado",
+  ).length;
+  const porCaducar = medicamentos.filter(
+    (item) => estadoCaducidad(item.fechaVencimiento) === "proximo",
   ).length;
 
   const filtrados = medicamentos.filter((medicamento) => {
@@ -92,10 +99,20 @@ export default function InventarioPage() {
         title="Inventario"
         description="Actualiza existencias y detecta medicamentos que requieren reabastecimiento."
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => {
+                setAviso(null);
+                setMostrarFormulario(true);
+              }}
+            >
+              <IconPlus className="h-4 w-4" />
+              Nuevo medicamento
+            </Button>
             <Badge variant="neutral">{medicamentos.length} registrados</Badge>
             <Badge variant="warning">{bajo} con stock bajo</Badge>
             <Badge variant="danger">{agotados} agotados</Badge>
+            <Badge variant="info">{porCaducar} por caducar</Badge>
           </div>
         }
       />
@@ -212,6 +229,22 @@ export default function InventarioPage() {
           </>
         )}
       </Card>
+
+      {mostrarFormulario ? (
+        <MedicamentoFormModal
+          onClose={() => setMostrarFormulario(false)}
+          onCreated={(medicamento: Medicamento) => {
+            setMostrarFormulario(false);
+            setAviso({
+              tipo: "exito",
+              texto: `Se registró ${medicamento.nombre} (lote ${
+                medicamento.lote ?? "sin lote"
+              }) con ${medicamento.stock} unidades.`,
+            });
+            medicamentosQ.reload();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

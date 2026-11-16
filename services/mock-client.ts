@@ -1,5 +1,7 @@
-import { calcularEstadoStock } from "@/lib/format";
+import { calcularEstadoStock, estadoCaducidad } from "@/lib/format";
 import type {
+  CategoriaMedicamento,
+  CrearMedicamentoRequest,
   Medicamento,
   Paginated,
   PaginationParams,
@@ -72,6 +74,119 @@ function buscarMedicamento(id: string): Medicamento {
     });
   }
   return medicamento;
+}
+
+function buscarReceta(id: string): Receta {
+  const receta = recetas.find((item) => item.id === id);
+  if (!receta) {
+    throw new ApiError("La receta solicitada no existe.", {
+      status: 404,
+      code: "RECETA_NOT_FOUND",
+    });
+  }
+  return receta;
+}
+
+function copiarReceta(receta: Receta): Receta {
+  return { ...receta, items: receta.items.map((item) => ({ ...item })) };
+}
+
+/** Ajusta el stock del medicamento y recalcula su estado. */
+function moverStock(medicamento: Medicamento, delta: number): void {
+  medicamento.stock = Math.max(0, medicamento.stock + delta);
+  medicamento.estado = calcularEstadoStock(
+    medicamento.stock,
+    medicamento.stockMinimo,
+  );
+  medicamento.actualizadoEn = new Date().toISOString();
+}
+
+const CATEGORIAS_VALIDAS: CategoriaMedicamento[] = [
+  "analgesico",
+  "antibiotico",
+  "antiinflamatorio",
+  "cardiovascular",
+  "respiratorio",
+  "digestivo",
+  "antialergico",
+  "otro",
+];
+
+function generarIdMedicamento(nombre: string): string {
+  const base =
+    normalizar(nombre)
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 40) || "medicamento";
+
+  let id = `med_${base}`;
+  let sufijo = 2;
+  while (medicamentos.some((item) => item.id === id)) {
+    id = `med_${base}_${sufijo++}`;
+  }
+  return id;
+}
+
+function validarMedicamento(payload: CrearMedicamentoRequest): void {
+  const textoObligatorio: Array<keyof CrearMedicamentoRequest> = [
+    "nombre",
+    "principioActivo",
+    "presentacion",
+    "laboratorio",
+  ];
+
+  for (const campo of textoObligatorio) {
+    const valor = payload[campo];
+    if (typeof valor !== "string" || !valor.trim()) {
+      throw new ApiError(`El campo ${campo} es obligatorio.`, {
+        status: 400,
+        code: "VALIDATION_ERROR",
+      });
+    }
+  }
+
+  if (!CATEGORIAS_VALIDAS.includes(payload.categoria)) {
+    throw new ApiError("La categoría indicada no es válida.", {
+      status: 400,
+      code: "VALIDATION_ERROR",
+    });
+  }
+
+  if (!Number.isFinite(payload.precio) || payload.precio < 0) {
+    throw new ApiError("El precio debe ser un número mayor o igual a cero.", {
+      status: 400,
+      code: "VALIDATION_ERROR",
+    });
+  }
+
+  if (!Number.isFinite(payload.stock) || payload.stock < 0) {
+    throw new ApiError("El stock debe ser un número mayor o igual a cero.", {
+      status: 400,
+      code: "VALIDATION_ERROR",
+    });
+  }
+
+  if (!Number.isFinite(payload.stockMinimo) || payload.stockMinimo < 0) {
+    throw new ApiError(
+      "El stock mínimo debe ser un número mayor o igual a cero.",
+      { status: 400, code: "VALIDATION_ERROR" },
+    );
+  }
+
+  if (payload.fechaVencimiento) {
+    if (Number.isNaN(new Date(payload.fechaVencimiento).getTime())) {
+      throw new ApiError("La fecha de caducidad no es válida.", {
+        status: 400,
+        code: "VALIDATION_ERROR",
+      });
+    }
+    if (estadoCaducidad(payload.fechaVencimiento) === "caducado") {
+      throw new ApiError(
+        "La fecha de caducidad no puede estar en el pasado.",
+        { status: 400, code: "VALIDATION_ERROR" },
+      );
+    }
+  }
 }
 
 function filtrarRecetas(params: {
@@ -184,6 +299,33 @@ export const mockClient: ApiClient = {
       return { ...buscarMedicamento(id) };
     },
 
+    async crear(payload) {
+      await esperar();
+      validarMedicamento(payload);
+
+      const stock = Math.floor(payload.stock);
+      const stockMinimo = Math.floor(payload.stockMinimo);
+      const medicamento: Medicamento = {
+        id: generarIdMedicamento(payload.nombre),
+        nombre: payload.nombre.trim(),
+        principioActivo: payload.principioActivo.trim(),
+        presentacion: payload.presentacion.trim(),
+        laboratorio: payload.laboratorio.trim(),
+        categoria: payload.categoria,
+        precio: Number(payload.precio),
+        stock,
+        stockMinimo,
+        requiereReceta: Boolean(payload.requiereReceta),
+        lote: payload.lote?.trim() || undefined,
+        fechaVencimiento: payload.fechaVencimiento || undefined,
+        estado: calcularEstadoStock(stock, stockMinimo),
+        actualizadoEn: new Date().toISOString(),
+      };
+
+      medicamentos.push(medicamento);
+      return { ...medicamento };
+    },
+
     async verificarStock(id, cantidad) {
       await esperar();
       const medicamento = buscarMedicamento(id);
@@ -282,6 +424,8 @@ export const mockClient: ApiClient = {
           presentacion: medicamento.presentacion,
           cantidad,
           precioUnitario: medicamento.precio,
+          dosis: item.dosis?.trim() || undefined,
+          frecuencia: item.frecuencia?.trim() || undefined,
           indicaciones: item.indicaciones?.trim() || undefined,
           dispensada: false,
         };
@@ -333,14 +477,54 @@ export const mockClient: ApiClient = {
 
     async obtener(id) {
       await esperar();
-      const receta = recetas.find((item) => item.id === id);
-      if (!receta) {
-        throw new ApiError("La receta solicitada no existe.", {
-          status: 404,
-          code: "RECETA_NOT_FOUND",
-        });
+      return copiarReceta(buscarReceta(id));
+    },
+
+    async actualizarEstado(id, estado) {
+      await esperar();
+      const receta = buscarReceta(id);
+
+      if (receta.estado === estado) {
+        return copiarReceta(receta);
       }
-      return { ...receta, items: receta.items.map((item) => ({ ...item })) };
+
+      if (estado === "dispensada") {
+        const pendientes = receta.items.filter((item) => !item.dispensada);
+
+        // Validar todo el stock antes de descontar para no dejar la receta a medias.
+        for (const item of pendientes) {
+          const medicamento = buscarMedicamento(item.medicamentoId);
+          if (medicamento.stock < item.cantidad) {
+            throw new ApiError(
+              `Stock insuficiente de ${medicamento.nombre}. Disponibles: ${medicamento.stock}, solicitados: ${item.cantidad}.`,
+              {
+                status: 409,
+                code: "STOCK_INSUFICIENTE",
+                details: {
+                  medicamentoId: medicamento.id,
+                  disponibles: medicamento.stock,
+                  solicitados: item.cantidad,
+                },
+              },
+            );
+          }
+        }
+
+        for (const item of pendientes) {
+          moverStock(buscarMedicamento(item.medicamentoId), -item.cantidad);
+          item.dispensada = true;
+        }
+      } else if (receta.estado === "dispensada") {
+        // Revertir un dispensado devuelve el stock descontado en la simulación.
+        for (const item of receta.items) {
+          if (!item.dispensada) continue;
+          moverStock(buscarMedicamento(item.medicamentoId), item.cantidad);
+          item.dispensada = false;
+        }
+      }
+
+      receta.estado = estado;
+      return copiarReceta(receta);
     },
   },
 

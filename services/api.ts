@@ -1,7 +1,9 @@
 import type {
   ApiEnvelope,
   ApiErrorBody,
+  CrearMedicamentoRequest,
   CrearRecetaRequest,
+  EstadoReceta,
   LoginRequest,
   LoginResponse,
   Medicamento,
@@ -230,6 +232,7 @@ export interface ApiClient {
   medicamentos: {
     listar(params?: MedicamentoQuery): Promise<Paginated<Medicamento>>;
     obtener(id: string): Promise<Medicamento>;
+    crear(payload: CrearMedicamentoRequest): Promise<Medicamento>;
     verificarStock(id: string, cantidad: number): Promise<VerificacionStock>;
     actualizarStock(id: string, stock: number): Promise<Medicamento>;
   };
@@ -241,6 +244,11 @@ export interface ApiClient {
     ): Promise<Paginated<Receta>>;
     listar(params?: RecetaQuery): Promise<Paginated<Receta>>;
     obtener(id: string): Promise<Receta>;
+    /**
+     * Cambia el estado de una receta. `dispensada` descuenta stock
+     * (PATCH /recetas/:id/dispensar); el resto usa PATCH /recetas/:id/estado.
+     */
+    actualizarEstado(id: string, estado: EstadoReceta): Promise<Receta>;
   };
   pacientes: {
     listar(params?: PacienteQuery): Promise<Paginated<Usuario>>;
@@ -286,6 +294,12 @@ export const apiClient: ApiClient = {
     obtener(id) {
       return request<Medicamento>(`/medicamentos/${encodeURIComponent(id)}`);
     },
+    crear(payload) {
+      return request<Medicamento>("/medicamentos", {
+        method: "POST",
+        body: payload,
+      });
+    },
     verificarStock(id, cantidad) {
       return request<VerificacionStock>(
         `/medicamentos/${encodeURIComponent(id)}/stock`,
@@ -314,6 +328,16 @@ export const apiClient: ApiClient = {
     },
     obtener(id) {
       return request<Receta>(`/recetas/${encodeURIComponent(id)}`);
+    },
+    actualizarEstado(id, estado) {
+      const path = `/recetas/${encodeURIComponent(id)}`;
+      if (estado === "dispensada") {
+        return request<Receta>(`${path}/dispensar`, { method: "PATCH" });
+      }
+      return request<Receta>(`${path}/estado`, {
+        method: "PATCH",
+        body: { estado },
+      });
     },
   },
 

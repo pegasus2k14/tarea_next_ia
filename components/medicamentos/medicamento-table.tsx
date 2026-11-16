@@ -1,3 +1,4 @@
+import { CaducidadBadge } from "@/components/medicamentos/caducidad-badge";
 import { StockBadge } from "@/components/medicamentos/stock-badge";
 import { Button } from "@/components/ui/button";
 import { IconRefresh } from "@/components/ui/icons";
@@ -17,26 +18,26 @@ export function MedicamentoTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[900px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-[11px] uppercase tracking-[0.12em] text-slate-400">
             <th scope="col" className="px-4 py-3 font-semibold">
               Medicamento
             </th>
             <th scope="col" className="px-4 py-3 font-semibold">
-              Categoría
+              Descripción
             </th>
             <th scope="col" className="px-4 py-3 font-semibold">
-              Existencias
+              Stock actual
             </th>
             <th scope="col" className="px-4 py-3 font-semibold">
-              Vencimiento
+              Lote
+            </th>
+            <th scope="col" className="px-4 py-3 font-semibold">
+              Caducidad
             </th>
             <th scope="col" className="px-4 py-3 font-semibold">
               Precio
-            </th>
-            <th scope="col" className="px-4 py-3 font-semibold">
-              Estado
             </th>
             {onReponer ? (
               <th scope="col" className="px-4 py-3 text-right font-semibold">
@@ -56,14 +57,19 @@ export function MedicamentoTable({
                   {medicamento.nombre}
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {medicamento.principioActivo} · {medicamento.presentacion}
-                </p>
-                <p className="text-[11px] text-slate-400">
                   {medicamento.laboratorio}
                 </p>
               </td>
-              <td className="px-4 py-3.5 text-slate-600">
-                {CATEGORIA_LABEL[medicamento.categoria]}
+              <td className="px-4 py-3.5">
+                <p className="text-xs font-medium text-slate-600">
+                  {medicamento.principioActivo}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {medicamento.presentacion}
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  {CATEGORIA_LABEL[medicamento.categoria]}
+                </p>
               </td>
               <td className="px-4 py-3.5">
                 <p
@@ -81,15 +87,33 @@ export function MedicamentoTable({
                 <p className="text-[11px] text-slate-400">
                   mínimo {medicamento.stockMinimo}
                 </p>
+                <div className="mt-1">
+                  <StockBadge estado={medicamento.estado} />
+                </div>
               </td>
-              <td className="px-4 py-3.5 text-slate-600">
-                {formatearFecha(medicamento.fechaVencimiento)}
+              <td className="px-4 py-3.5">
+                <span className="font-mono text-xs text-slate-600">
+                  {medicamento.lote ?? "—"}
+                </span>
+                {medicamento.requiereReceta ? (
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Requiere receta
+                  </p>
+                ) : null}
+              </td>
+              <td className="px-4 py-3.5">
+                <p className="text-xs text-slate-600">
+                  {formatearFecha(medicamento.fechaVencimiento)}
+                </p>
+                <div className="mt-1">
+                  <CaducidadBadge
+                    fecha={medicamento.fechaVencimiento}
+                    soloAlerta
+                  />
+                </div>
               </td>
               <td className="px-4 py-3.5 tabular-nums text-slate-600">
                 {formatearMoneda(medicamento.precio)}
-              </td>
-              <td className="px-4 py-3.5">
-                <StockBadge estado={medicamento.estado} />
               </td>
               {onReponer ? (
                 <td className="px-4 py-3.5 text-right">

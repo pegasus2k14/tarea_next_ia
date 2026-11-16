@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { RecetaCard } from "@/components/recetas/receta-card";
+import { RecetaEstadoControl } from "@/components/recetas/receta-estado-control";
 import { RecetaForm } from "@/components/recetas/receta-form";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import {
+  IconAlert,
   IconCheck,
   IconClipboard,
   IconPlus,
@@ -18,10 +20,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAsync } from "@/hooks/use-async";
 import { ESTADO_RECETA_LABEL, ESTADOS_RECETA } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { api } from "@/services";
-import type { EstadoReceta } from "@/types";
+import { api, ApiError } from "@/services";
+import type { EstadoReceta, Receta } from "@/types";
 
 type Filtro = "todas" | EstadoReceta;
+
+interface Aviso {
+  tipo: "exito" | "error";
+  texto: string;
+}
 
 const FILTROS: Filtro[] = ["todas", ...ESTADOS_RECETA];
 
@@ -35,7 +42,8 @@ export default function AdminRecetasPage() {
 
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
-  const [exito, setExito] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const [cambiandoId, setCambiandoId] = useState<string | null>(null);
 
   const recetas = recetasQ.data?.items ?? [];
   const medicamentos = medicamentosQ.data?.items ?? [];
@@ -60,7 +68,32 @@ export default function AdminRecetasPage() {
 
   function alternarFormulario() {
     setMostrarFormulario((visible) => !visible);
-    setExito(null);
+    setAviso(null);
+  }
+
+  async function cambiarEstado(receta: Receta, estado: EstadoReceta) {
+    if (receta.estado === estado) return;
+
+    setCambiandoId(receta.id);
+    setAviso(null);
+    try {
+      const actualizada = await api.recetas.actualizarEstado(receta.id, estado);
+      setAviso({
+        tipo: "exito",
+        texto: `Receta ${actualizada.codigo} actualizada a ${ESTADO_RECETA_LABEL[actualizada.estado]}.`,
+      });
+      recetasQ.reload();
+    } catch (error) {
+      setAviso({
+        tipo: "error",
+        texto:
+          error instanceof ApiError
+            ? error.message
+            : "No se pudo actualizar el estado de la receta.",
+      });
+    } finally {
+      setCambiandoId(null);
+    }
   }
 
   return (
@@ -94,20 +127,34 @@ export default function AdminRecetasPage() {
         }
       />
 
-      {exito ? (
+      {aviso ? (
         <div
-          className="flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-          role="status"
+          className={cn(
+            "flex items-start justify-between gap-3 rounded-xl border p-3 text-sm",
+            aviso.tipo === "exito"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-rose-200 bg-rose-50 text-rose-800",
+          )}
+          role={aviso.tipo === "exito" ? "status" : "alert"}
         >
           <span className="flex items-start gap-2">
-            <IconCheck className="mt-0.5 h-4 w-4 shrink-0" />
-            {exito}
+            {aviso.tipo === "exito" ? (
+              <IconCheck className="mt-0.5 h-4 w-4 shrink-0" />
+            ) : (
+              <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            )}
+            {aviso.texto}
           </span>
           <button
             type="button"
-            onClick={() => setExito(null)}
+            onClick={() => setAviso(null)}
             aria-label="Cerrar aviso"
-            className="text-emerald-700/70 transition-colors hover:text-emerald-900"
+            className={cn(
+              "transition-colors",
+              aviso.tipo === "exito"
+                ? "text-emerald-700/70 hover:text-emerald-900"
+                : "text-rose-700/70 hover:text-rose-900",
+            )}
           >
             <IconX className="h-4 w-4" />
           </button>
@@ -121,9 +168,10 @@ export default function AdminRecetasPage() {
             pacientes={pacientes}
             onCreated={(receta) => {
               setMostrarFormulario(false);
-              setExito(
-                `Receta ${receta.codigo} creada para ${receta.pacienteNombre}.`,
-              );
+              setAviso({
+                tipo: "exito",
+                texto: `Receta ${receta.codigo} creada para ${receta.pacienteNombre}.`,
+              });
               recetasQ.reload();
             }}
             onCancel={() => setMostrarFormulario(false)}
@@ -215,7 +263,18 @@ export default function AdminRecetasPage() {
       ) : (
         <div className="grid items-start gap-4 md:grid-cols-2">
           {filtradas.map((receta) => (
-            <RecetaCard key={receta.id} receta={receta} />
+            <RecetaCard
+              key={receta.id}
+              receta={receta}
+              acciones={
+                <RecetaEstadoControl
+                  recetaId={receta.id}
+                  estado={receta.estado}
+                  cambiando={cambiandoId === receta.id}
+                  onCambiar={(estado) => cambiarEstado(receta, estado)}
+                />
+              }
+            />
           ))}
         </div>
       )}

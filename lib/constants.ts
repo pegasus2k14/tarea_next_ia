@@ -5,6 +5,7 @@ import type {
   Rol,
   Usuario,
 } from "@/types";
+import type { EstadoCaducidad, EstadoRecetaPaciente } from "@/lib/format";
 
 /**
  * Usuarios de demostración. Cuando exista autenticación real,
@@ -48,11 +49,28 @@ export const ESTADO_STOCK_LABEL: Record<EstadoStock, string> = {
   agotado: "Agotado",
 };
 
+export const ESTADO_CADUCIDAD_LABEL: Record<EstadoCaducidad, string> = {
+  caducado: "Caducado",
+  proximo: "Por caducar",
+  vigente: "Vigente",
+  "sin-fecha": "Sin fecha",
+};
+
 export const ESTADO_RECETA_LABEL: Record<EstadoReceta, string> = {
   pendiente: "Pendiente",
   dispensada: "Dispensada",
   parcial: "Parcial",
   cancelada: "Cancelada",
+};
+
+/** Etiquetas simplificadas para la vista del paciente. */
+export const ESTADO_RECETA_PACIENTE_LABEL: Record<
+  EstadoRecetaPaciente,
+  string
+> = {
+  activo: "Activo",
+  completado: "Completado",
+  cancelado: "Cancelado",
 };
 
 export const ESTADOS_RECETA: EstadoReceta[] = [

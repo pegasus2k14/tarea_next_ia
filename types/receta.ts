@@ -9,6 +9,10 @@ export interface RecetaItem {
   presentacion?: string;
   cantidad: number;
   precioUnitario: number;
+  /** Dosis legible para el paciente, por ejemplo "1 tableta". */
+  dosis?: string;
+  /** Frecuencia legible, por ejemplo "Cada 8 horas". */
+  frecuencia?: string;
   indicaciones?: string;
   dispensada: boolean;
 }
@@ -31,7 +35,15 @@ export interface Receta {
 export interface CrearRecetaItem {
   medicamentoId: string;
   cantidad: number;
+  /** Opcionales: la UI también las compone dentro de `indicaciones`. */
+  dosis?: string;
+  frecuencia?: string;
   indicaciones?: string;
+}
+
+/** Cambio de estado solicitado por el farmacéutico. */
+export interface ActualizarEstadoRecetaRequest {
+  estado: EstadoReceta;
 }
 
 export interface CrearRecetaRequest {
